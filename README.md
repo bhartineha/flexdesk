@@ -17,6 +17,12 @@ docs/DEPLOYMENT.md        Vercel / Render / Supabase production blueprint
 docker-compose.yml        Local Postgres for development
 ```
 
+## Screenshots
+
+| Floorplan Matrix | Team Synchronizer | Capacity Monitor |
+| --- | --- | --- |
+| ![Floorplan Matrix](docs/screenshots/floorplan-matrix.png) | ![Team Synchronizer](docs/screenshots/team-synchronizer.png) | ![Capacity Monitor](docs/screenshots/capacity-monitor.png) |
+
 ## Features
 
 - **Floorplan Matrix** — interactive grid of every desk, meeting pod, and
