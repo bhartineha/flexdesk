@@ -1,0 +1,50 @@
+databases:
+  - name: flexdesk-db
+    databaseName: flexdesk
+    user: flexdesk
+    plan: free
+
+services:
+  - type: web
+    name: flexdesk-bhartineha-api
+    env: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build --workspace=apps/api
+    startCommand: npm run db:migrate:deploy --workspace=apps/api && node apps/api/dist/index.js
+    envVars:
+      - key: NODE_VERSION
+        value: 20.20.2
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "4000"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 12h
+      - key: CORS_ORIGIN
+        value: https://flexdesk-bhartineha-web.onrender.com
+      - key: CHECKIN_GRACE_MINUTES
+        value: "120"
+      - key: RELEASE_RUNNER_CRON
+        value: "*/5 * * * *"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: flexdesk-db
+          property: connectionString
+
+staticSites:
+  - name: flexdesk-bhartineha-web
+    plan: free
+    buildCommand: npm install && npm run build --workspace=apps/web
+    staticPublishPath: apps/web/dist
+    envVars:
+      - key: NODE_VERSION
+        value: 20.20.2
+      - key: VITE_API_URL
+        value: https://flexdesk-bhartineha-api.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

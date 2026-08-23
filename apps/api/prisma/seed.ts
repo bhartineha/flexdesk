@@ -59,6 +59,13 @@ function buildDeskGrid(floorId: string, gridWidth: number, gridHeight: number) {
 }
 
 async function main() {
+  const existing = await prisma.company.findUnique({ where: { slug: "acme" } });
+  if (existing) {
+    // eslint-disable-next-line no-console
+    console.log("Seed skipped: company 'acme' already exists.");
+    return;
+  }
+
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
 
   const company = await prisma.company.create({
