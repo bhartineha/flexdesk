@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+.env
+.env.production
+.env.local
+*.log
+.DS_Store
+apps/web/dist/
+apps/api/dist/
+apps/api/prisma/dev.db
+apps/api/prisma/dev.db-journal
+coverage/
+cypress/videos/
+cypress/screenshots/
+.vercel/
+*.tsbuildinfo

@@ -1,0 +1,232 @@
+// FlexDesk relational schema
+//
+// Normalization notes (see docs/ARCHITECTURE.md for the full write-up):
+// - Company is the tenant root; every child table reaches it through a chain
+//   of foreign keys (Building -> Floor -> Desk, User -> Company). Booking
+//   *also* carries a denormalized companyId so tenant-scoped queries never
+//   need to join through Desk -> Floor -> Building just to filter by tenant.
+//   That's a deliberate, documented denormalization traded for index-only
+//   tenant scans on the hottest table in the system.
+// - RecurringBooking and TeamSyncEvent are "compiler inputs": each expands
+//   into one row per Booking occurrence rather than being interpreted at
+//   read time, so the availability query for a single day never has to
+//   evaluate a recurrence rule — it's a plain indexed lookup on
+//   (deskId, date, slot).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  TEAM_LEAD
+  EMPLOYEE
+}
+
+enum DeskType {
+  DESK
+  MEETING_POD
+  MONITOR_STATION
+}
+
+enum BookingSlot {
+  FULL_DAY
+  MORNING
+  AFTERNOON
+}
+
+enum BookingStatus {
+  PENDING_CHECKIN
+  CHECKED_IN
+  RELEASED
+  CANCELLED
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  users             User[]
+  buildings         Building[]
+  teams             Team[]
+  bookings          Booking[]
+  recurringBookings RecurringBooking[]
+  teamSyncEvents    TeamSyncEvent[]
+}
+
+model User {
+  id           String   @id @default(uuid())
+  companyId    String
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(EMPLOYEE)
+  createdAt    DateTime @default(now())
+
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  memberships       TeamMembership[]
+  bookings          Booking[]
+  recurringBookings RecurringBooking[]
+  createdSyncEvents TeamSyncEvent[]    @relation("SyncEventCreatedBy")
+
+  @@index([companyId])
+}
+
+model Building {
+  id            String   @id @default(uuid())
+  companyId     String
+  name          String
+  address       String
+  timezone      String   @default("UTC")
+  capacityLimit Int
+  createdAt     DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  floors  Floor[]
+
+  @@index([companyId])
+}
+
+model Floor {
+  id         String   @id @default(uuid())
+  buildingId String
+  name       String
+  sortOrder  Int      @default(0)
+  gridWidth  Int      @default(20)
+  gridHeight Int      @default(12)
+  createdAt  DateTime @default(now())
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  desks    Desk[]
+
+  @@index([buildingId])
+}
+
+model Desk {
+  id        String   @id @default(uuid())
+  floorId   String
+  label     String
+  type      DeskType @default(DESK)
+  gridX     Int
+  gridY     Int
+  gridW     Int      @default(1)
+  gridH     Int      @default(1)
+  createdAt DateTime @default(now())
+
+  floor             Floor              @relation(fields: [floorId], references: [id], onDelete: Cascade)
+  bookings          Booking[]
+  recurringBookings RecurringBooking[]
+
+  @@index([floorId])
+}
+
+model Team {
+  id        String   @id @default(uuid())
+  companyId String
+  name      String
+  createdAt DateTime @default(now())
+
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  memberships TeamMembership[]
+  syncEvents  TeamSyncEvent[]
+
+  @@index([companyId])
+}
+
+model TeamMembership {
+  id       String   @id @default(uuid())
+  teamId   String
+  userId   String
+  isLead   Boolean  @default(false)
+  joinedAt DateTime @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+// One row per calendar occurrence produced by the recurring booking
+// compiler or the team synchronizer. This is the only table availability
+// and capacity queries read from.
+model Booking {
+  id          String        @id @default(uuid())
+  companyId   String
+  deskId      String
+  userId      String
+  date        DateTime      @db.Date
+  slot        BookingSlot   @default(FULL_DAY)
+  status      BookingStatus @default(PENDING_CHECKIN)
+  checkInBy   DateTime
+  checkedInAt DateTime?
+  createdAt   DateTime      @default(now())
+
+  recurringBookingId String?
+  teamSyncEventId    String?
+
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  desk             Desk              @relation(fields: [deskId], references: [id], onDelete: Cascade)
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recurringBooking RecurringBooking? @relation(fields: [recurringBookingId], references: [id], onDelete: SetNull)
+  teamSyncEvent    TeamSyncEvent?    @relation(fields: [teamSyncEventId], references: [id], onDelete: SetNull)
+
+  // NOTE: the real double-booking guard is a *partial* unique index added
+  // in a raw-SQL migration (see migrations/.../migration.sql), not this
+  // attribute — a plain @@unique here would cover every row regardless of
+  // status, permanently blocking a desk/date/slot the moment one booking on
+  // it is ever cancelled. This @@index just keeps the lookup fast; it does
+  // not enforce uniqueness.
+  @@index([deskId, date, slot])
+  @@index([companyId, date])
+  @@index([userId, date])
+  @@index([status, checkInBy])
+}
+
+// The definition a team lead or employee submits; the Recurring Booking
+// Compiler expands this into individual Booking rows for each matching
+// weekday within [startDate, endDate].
+model RecurringBooking {
+  id          String   @id @default(uuid())
+  companyId   String
+  deskId      String
+  userId      String
+  startDate   DateTime @db.Date
+  endDate     DateTime @db.Date
+  daysOfWeek  Int[]
+  slot        BookingSlot @default(FULL_DAY)
+  createdAt   DateTime @default(now())
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  desk     Desk      @relation(fields: [deskId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  @@index([companyId])
+}
+
+// A team lead's request to reserve a matching cluster of desks for a given
+// day; fans out into one Booking per team member via the team sync service.
+model TeamSyncEvent {
+  id        String      @id @default(uuid())
+  companyId String
+  teamId    String
+  date      DateTime    @db.Date
+  slot      BookingSlot @default(FULL_DAY)
+  createdById String
+  createdAt DateTime    @default(now())
+
+  company   Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  team      Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("SyncEventCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  bookings  Booking[]
+
+  @@index([companyId, date])
+}
