@@ -1,4 +1,4 @@
-# FlexDesk — Architecture & Interview Talking Points
+# FlexDesk — Architecture
 
 ## 1. Relational schema & normalization
 

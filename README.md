@@ -75,7 +75,7 @@ See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the full Vercel (client)
 / Render or Fly.io (API) / Supabase (Postgres) blueprint, including RLS
 hardening notes.
 
-## Design decisions & interview talking points
+## Design decisions
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the relational
 schema walkthrough (normalization, the one deliberate denormalization and
