@@ -1,9 +1,9 @@
 # FlexDesk — Multi-Tenant Hybrid Workspace Allocator
 
-Corporate hot-desking system: interactive floorplan booking, team-cluster
+Corporate desk system: interactive floorplan booking, team-cluster
 scheduling, recurring desk leases, live occupancy monitoring, and an
 automated no-show release job. Built as a portfolio-grade demonstration of
-relational multi-tenant design, not a toy CRUD app.
+relational multi-tenant design, CRUD app.
 
 ## Repo layout
 
@@ -39,7 +39,7 @@ docker-compose.yml        Local Postgres for development
 
 ## Quickstart
 
-Requires Node 18.18+ and Docker (or any reachable Postgres 14+ instance).
+Requires Node 18.18+ and Docker (or Postgres 14+ instance).
 
 ```bash
 cp apps/api/.env.example apps/api/.env
